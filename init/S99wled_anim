@@ -1,0 +1,8 @@
+#!/bin/sh
+# WLED Animation (yam-пакет kanad/wled-anim): yam 0.2.2 сам службы не запускает.
+# Положить в /etc/init.d (корень смонтирован только для чтения: mount -o remount,rw /).
+B=/data/yam/bin/wled_anim
+[ -f "$B" ] || exit 0
+case "${1:-start}" in
+start|stop|restart) exec sh "$B" "$1" ;;
+esac

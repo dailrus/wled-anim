@@ -1,0 +1,101 @@
+#!/bin/sh
+# WLED Animation (yam-пакет kanad/wled-anim): wled_anim start | stop | restart | status
+#   start   — собрать конфиг ALSA с отводом звука, подключить его bind mount'ом
+#             и запустить демоны: анимация (leds.lua), веб-интерфейс :8098 (web.lua),
+#             голосовое управление (voice.sh)
+#   stop    — остановить демоны и вернуть штатный звук (mediad перезапускается)
+# Настройки: /data/yam/var/wled_anim/settings (их же меняет веб-интерфейс).
+ROOT=${YAM_ROOT:-/data/yam}
+SHARE=$ROOT/share/kanad.wled-anim
+VAR=$ROOT/var/wled_anim
+RUN=/tmp/wled_anim
+LUAJIT=/opt/bin/luajit
+export LD_LIBRARY_PATH=/opt/lib WLED_ANIM_SHARE=$SHARE WLED_ANIM_VAR=$VAR
+# отвод собран под конкретный штатный asound.conf — после обновления прошивки не трогаем
+ORIG_MD5=f8c1508b55001372fd8144e66c5c7fd4
+
+restart_mediad() {  # mediad кэширует конфиг ALSA; launcher сам поднимет его заново
+  P=$(ps w | grep '[m]aind --mediad' | awk '{print $1}'); [ -z "$P" ] || kill $P
+}
+
+prepare() {
+  mkdir -p "$VAR" "$RUN"
+  OLD=$ROOT/var/kanad.ledviz            # настройки прежнего пакета kanad/ledviz
+  if [ ! -f "$VAR/settings" ] && [ -f "$OLD/settings" ]; then
+    cp "$OLD/settings" "$VAR/settings"; [ -f "$OLD/output_on" ] && cp "$OLD/output_on" "$VAR/"
+  fi
+  [ -f "$VAR/settings" ] || cp "$SHARE/settings.default" "$VAR/settings"
+  # кольцо Станции больше не поддерживается: прежние ring/both — это лента
+  sed -i -E 's/^output=(ring|both)$/output=wled/' "$VAR/settings"
+  grep -q -E '^(ring|both)$' "$VAR/output_on" 2>/dev/null && echo wled >"$VAR/output_on"
+  # tap.sh и asound.conf — в /tmp: ALSA вызывает tap.sh по абсолютному пути
+  sed "s#@SHARE@#$SHARE#g; s#@VAR@#$VAR#g" "$SHARE/tap.sh.in" >"$RUN/tap.sh"
+  chmod 755 "$RUN/tap.sh"
+  sed "s#@RUN@#$RUN#g" "$SHARE/asound.conf.in" >"$RUN/asound.conf"
+}
+
+mount_audio() {
+  if grep -q -E 'wled_anim|ledviz' /etc/asound.conf; then
+    grep -q "$RUN/tap.sh" /etc/asound.conf && return 0     # уже наш
+    umount /etc/asound.conf                                 # отвод старой версии
+  fi
+  [ "$(md5sum /etc/asound.conf | cut -d' ' -f1)" = "$ORIG_MD5" ] ||
+    { echo "штатный asound.conf изменился (обновление прошивки?) — отвод звука не включаю" >&2; return 1; }
+  mount --bind "$RUN/asound.conf" /etc/asound.conf || return 1
+  restart_mediad
+}
+
+daemon() {  # имя, затем команда
+  name=$1; shift
+  pid=$(cat "$RUN/$name.pid" 2>/dev/null)
+  [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null && return 0
+  start-stop-daemon -S -b -m -p "$RUN/$name.pid" -x "$@"
+}
+
+stop_daemons() {
+  for name in leds web voice; do
+    pid=$(cat "$RUN/$name.pid" 2>/dev/null)
+    [ -n "$pid" ] && kill "$pid" 2>/dev/null
+    rm -f "$RUN/$name.pid"
+  done
+  # tail из конвейера voice.sh
+  P=$(ps w | grep '[t]ail -n 0 -F /data/quasar/daemons_logs/maind.log' | awk '{print $1}'); [ -z "$P" ] || kill $P
+}
+
+stop_legacy() {  # демоны прежних версий (kanad/ledviz, /data/opt/ledviz) держат те же порты
+  for pf in /tmp/ledviz/leds.pid /tmp/ledviz/web.pid /tmp/ledviz/voice.pid /tmp/ledviz.pid /tmp/ledviz_voice.pid; do
+    pid=$(cat "$pf" 2>/dev/null); [ -n "$pid" ] && kill "$pid" 2>/dev/null; rm -f "$pf"
+  done
+  P=$(ps w | grep -E '[l]uajit .*/(kanad\.ledviz|opt/ledviz)/|[s]h .*/(kanad\.ledviz|opt/ledviz)/voice\.sh' | awk '{print $1}')
+  [ -z "$P" ] || { kill $P; sleep 1; }
+}
+
+case "${1:-}" in
+start)
+  stop_legacy
+  prepare
+  mount_audio
+  daemon leds "$LUAJIT" -- "$SHARE/leds.lua"
+  daemon web "$LUAJIT" -- "$SHARE/web.lua"
+  daemon voice /bin/sh -- "$SHARE/voice.sh"
+  echo "WLED Animation запущена, интерфейс: http://$(ip -4 addr show wlan0 2>/dev/null | sed -n 's/.*inet \([0-9.]*\).*/\1/p'):8098"
+  ;;
+stop)
+  stop_daemons
+  if grep -q -E 'wled_anim|ledviz' /etc/asound.conf; then umount /etc/asound.conf && restart_mediad; fi
+  echo "WLED Animation остановлена, штатный звук"
+  ;;
+restart)
+  stop_daemons; sleep 1; exec "$0" start
+  ;;
+status)
+  for name in leds web voice; do
+    pid=$(cat "$RUN/$name.pid" 2>/dev/null)
+    if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then echo "$name: работает ($pid)"; else echo "$name: остановлен"; fi
+  done
+  grep -q -E 'wled_anim|ledviz' /etc/asound.conf && echo "отвод звука: подключён" || echo "отвод звука: нет"
+  ;;
+*)
+  echo "использование: wled_anim start | stop | restart | status" >&2; exit 2
+  ;;
+esac

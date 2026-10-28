@@ -1,0 +1,295 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>WLED Animation</title>
+<style>
+:root{--bg:#10131a;--card:#1b2230;--fg:#e8edf7;--a:#4ea1ff;--m:#8b97ab;--l:#2b3648}
+*{box-sizing:border-box}
+body{margin:0;padding:12px;background:var(--bg);color:var(--fg);font:14px/1.4 system-ui,"Segoe UI",Roboto,Arial,sans-serif}
+header,main{max-width:560px;margin:0 auto}
+header{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:10px}
+h1{margin:0;font-size:17px}
+#msg{margin:0;min-height:17px;font-size:12px;color:var(--m)}
+#msg.err,.hint.err{color:#ff8d8d}
+.card{background:var(--card);border-radius:10px;padding:10px 12px 12px;margin-bottom:10px}
+h2{margin:2px 0 8px;font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:var(--m)}
+label{display:block;margin:10px 0 4px;font-size:12.5px;color:var(--m)}
+input[type=text],input[type=number],select{width:100%;padding:8px;border:1px solid var(--l);border-radius:8px;background:#131a26;color:var(--fg);font-size:14px}
+input[type=range]{display:block;width:100%;margin:0;accent-color:var(--a)}
+button{padding:8px 11px;border:1px solid #33425c;border-radius:8px;background:#233049;color:var(--fg);font-size:13px}
+button:active{background:var(--a);border-color:var(--a);color:#0b1220}
+.row{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+.seg{display:flex;gap:6px;flex-wrap:wrap}
+.seg label{position:relative;display:inline-flex;margin:0;font-size:13px;color:var(--fg)}
+.seg input{position:absolute;opacity:0;width:1px;height:1px}
+.seg span{display:block;padding:7px 12px;border:1px solid #33425c;border-radius:99px;background:#151d2a}
+.seg input:checked+span{background:var(--a);border-color:var(--a);color:#0b1220}
+.seg input:focus-visible+span{outline:2px solid var(--a);outline-offset:2px}
+.chk{display:flex;align-items:center;gap:8px;margin:10px 0 0;font-size:13.5px;color:var(--fg)}
+.chk input{width:18px;height:18px;margin:0;accent-color:var(--a)}
+.fld{display:flex;align-items:baseline;justify-content:space-between;gap:8px}
+.fld label{margin:10px 0 4px}
+.fld output{font-size:12px;color:var(--a)}
+.hint{margin:10px 0 0;font-size:12px;color:var(--m);word-break:break-word}
+.nodes{list-style:none;margin:8px 0 0;padding:0;display:flex;flex-direction:column;gap:6px}
+.nodes button{display:flex;justify-content:space-between;gap:10px;width:100%;text-align:left}
+</style>
+</head>
+<body>
+<header>
+<h1>WLED Animation</h1>
+<p id="msg" role="status" aria-live="polite"></p>
+</header>
+<main>
+<section class="card">
+<h2>Состояние</h2>
+<div class="seg" role="radiogroup" aria-label="Выход">
+<label><input type="radio" name="output" value="wled"><span>Включено</span></label>
+<label><input type="radio" name="output" value="off"><span>Выключено</span></label>
+</div>
+</section>
+<section class="card">
+<h2>Лента WLED</h2>
+<label for="wled_ip">IP-адрес ленты</label>
+<input type="text" id="wled_ip" inputmode="decimal" autocomplete="off" spellcheck="false" placeholder="192.168.1.50">
+<div class="row">
+<button type="button" id="btnCheck">Проверить</button>
+<button type="button" id="btnSaveIp">Сохранить IP</button>
+<button type="button" id="btnFind">Найти в сети</button>
+</div>
+<p class="hint" id="wledInfo"></p>
+<ul class="nodes" id="nodes" hidden></ul>
+<label for="wled_leds">Светодиодов, 1–490</label>
+<input type="number" id="wled_leds" min="1" max="490" step="1">
+</section>
+<section class="card">
+<h2>Анимация</h2>
+<label for="mode">Режим</label>
+<select id="mode">
+<option value="rainbow">Радуга от центра</option>
+<option value="mono">Одноцветная</option>
+<option value="vu">VU-метр</option>
+<option value="pulse">Пульс</option>
+<option value="spectrum">Спектр (бас/середина/верх)</option>
+<option value="wled_fx">Эффект WLED под музыку</option>
+</select>
+<div id="fxBlock" hidden>
+<label for="fx_id">Эффект WLED</label>
+<select id="fx_id"><option value="-1">-1: оставить текущий</option></select>
+<label for="fx_pal">Палитра</label>
+<select id="fx_pal"><option value="-1">-1: оставить текущую</option></select>
+<label class="chk"><input type="checkbox" id="fx_color"> Цвет по радуге</label>
+<label class="chk"><input type="checkbox" id="fx_ix"> Интенсивность по музыке</label>
+<div class="fld"><label for="fx_floor">Яркость в тишине</label><output id="fx_floor_o" for="fx_floor">20</output></div>
+<input type="range" id="fx_floor" min="0" max="100" step="1">
+</div>
+</section>
+<section class="card">
+<h2>Задержка</h2>
+<div class="fld"><label for="delay_ms">Задержка</label><output id="delay_ms_o" for="delay_ms">0 мс</output></div>
+<input type="range" id="delay_ms" min="0" max="300" step="10">
+<div class="fld"><label for="smooth">Плавность (0 — быстрее всего)</label><output id="smooth_o" for="smooth">33</output></div>
+<input type="range" id="smooth" min="0" max="100" step="1">
+<div class="row"><button type="button" id="btnCalib">Калибровка, 15 с</button></div>
+<p class="hint" id="calibInfo">Поставьте музыку на паузу и нажмите «Калибровка»: колонка сыграет ровный бит. Двигайте ползунок, пока вспышки не совпадут с ударами: свет опаздывает — меньше, опережает — больше.</p>
+</section>
+<section class="card">
+<h2>Звук и вид</h2>
+<div class="fld"><label for="brightness">Яркость</label><output id="brightness_o" for="brightness">80</output></div>
+<input type="range" id="brightness" min="0" max="100" step="1">
+<div class="fld"><label for="speed">Скорость цвета</label><output id="speed_o" for="speed">33</output></div>
+<input type="range" id="speed" min="0" max="100" step="1">
+<div class="fld"><label for="gate">Порог тишины</label><output id="gate_o" for="gate">27</output></div>
+<input type="range" id="gate" min="0" max="100" step="1">
+<label class="chk"><input type="checkbox" id="alice_mute"> Гасить, когда говорит Алиса</label>
+</section>
+</main>
+<script>
+(()=>{
+'use strict';
+const $=id=>document.getElementById(id), on=(e,t,f)=>e.addEventListener(t,f), enc=encodeURIComponent;
+const D={output:'wled',mode:'rainbow',brightness:.8,speed:1,delay_ms:0,smooth:1,gate:.08,alice_mute:1,
+fx_id:-1,fx_pal:-1,fx_color:1,fx_ix:1,fx_floor:.2,wled_leds:188,wled_ip:''};
+const NUM={brightness:1,speed:1,delay_ms:1,smooth:1,gate:1,alice_mute:1,fx_id:1,fx_pal:1,fx_color:1,fx_ix:1,fx_floor:1,wled_leds:1};
+const RNG=['brightness','speed','delay_ms','smooth','gate','fx_floor'], CHK=['alice_mute','fx_color','fx_ix'];
+const st={...D};
+let pend={},tm=0,mt=0,cache=null,chBusy=false,fxBusy=false;
+const SC={brightness:1,speed:3,smooth:3,gate:.3,fx_floor:1};   // 100 на ползунке = это значение в settings
+const toUi=(k,v)=>k in SC?Math.round(+v/SC[k]*100):+v, fromUi=(k,u)=>k in SC?Math.round(+u/100*SC[k]*1000)/1000:+u;
+const fmt=(k,v)=>k==="delay_ms"?v+" мс":String(toUi(k,v));
+const msg=(t,err)=>{const m=$('msg');m.textContent=t;m.className=err?'err':'';clearTimeout(mt);
+ if(t)mt=setTimeout(()=>{m.textContent='';m.className='';},2000);};
+const hint=(t,err)=>{const e=$('wledInfo');e.textContent=t;e.className='hint'+(err?' err':'');};
+
+function post(o){
+ const keys=Object.keys(o);
+ if(!keys.length)return Promise.resolve({});
+ const body=keys.map(k=>enc(k)+'='+enc(o[k])).join('&');
+ return fetch('api/settings',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body})
+  .then(r=>r.text().then(t=>{
+   let d={};try{d=JSON.parse(t);}catch(e){}
+   if(!r.ok||d.ok===false)throw new Error(d.error||('HTTP '+r.status));
+   return d;
+  }));
+}
+function flush(){
+ clearTimeout(tm);tm=0;
+ const o=pend;pend={};
+ const k=Object.keys(o);
+ if(!k.length)return;
+ post(o).then(()=>msg('Сохранено ✓'),e=>{
+  k.forEach(x=>{if(!(x in pend))pend[x]=o[x];});
+  msg('Ошибка: '+e.message,1);
+ });
+}
+function put(k,v,now){pend[k]=v;clearTimeout(tm);now?flush():tm=setTimeout(flush,300);}
+
+function fxToggle(){
+ const onFx=st.mode==='wled_fx';
+ $('fxBlock').hidden=!onFx;
+ if(onFx)loadFx();
+}
+function render(){
+ document.querySelectorAll('input[name=output]').forEach(el=>{el.checked=el.value===st.output;});
+ ['wled_ip','wled_leds','mode'].forEach(k=>{$(k).value=st[k];});
+ RNG.forEach(k=>{$(k).value=toUi(k,st[k]);$(k+'_o').textContent=fmt(k,st[k]);});
+ CHK.forEach(k=>{$(k).checked=!!+st[k];});
+ ['fx_id','fx_pal'].forEach(k=>{$(k).value=st[k];});
+ fxToggle();
+}
+
+document.querySelectorAll('input[name=output]').forEach(el=>on(el,'change',()=>{
+ if(el.checked){st.output=el.value;put('output',el.value,1);}
+}));
+on($('mode'),'change',()=>{st.mode=$('mode').value;put('mode',st.mode,1);fxToggle();});
+CHK.forEach(k=>{const el=$(k);on(el,'change',()=>{st[k]=el.checked?1:0;put(k,st[k],1);});});
+RNG.forEach(k=>{const el=$(k);on(el,'input',()=>{const v=fromUi(k,el.value);st[k]=v;$(k+'_o').textContent=fmt(k,v);put(k,v,0);});});
+on($('wled_leds'),'change',()=>{
+ const el=$('wled_leds'),v=Math.round(+el.value);
+ if(!(v>=1&&v<=490)){el.value=st.wled_leds;msg('Светодиодов: 1–490',1);return;}
+ st.wled_leds=v;el.value=v;put('wled_leds',v,1);
+});
+['fx_id','fx_pal'].forEach(k=>on($(k),'change',()=>{st[k]=+$(k).value;put(k,st[k],1);}));
+
+const ipOk=s=>{
+ const m=/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(String(s||'').trim());
+ return !!m&&[1,2,3,4].every(i=>+m[i]<=255);
+};
+function getWled(ip,p){
+ return fetch('api/wled?ip='+enc(ip)+'&p='+p).then(r=>{
+  if(!r.ok)throw new Error('WLED не отвечает');
+  return r.text().then(t=>{try{return JSON.parse(t);}catch(e){throw new Error('WLED не отвечает');}});
+ },()=>{throw new Error('WLED не отвечает');});
+}
+function saveIp(ip,leds){
+ const o={wled_ip:ip};
+ if(leds)o.wled_leds=leds;
+ st.wled_ip=ip;cache=null;
+ return post(o).then(()=>msg('Сохранено ✓'),e=>msg('Ошибка: '+e.message,1));
+}
+function check(){
+ const ip=$('wled_ip').value.trim();
+ if(!ipOk(ip)){hint('Некорректный IPv4: нужно 4 числа 0–255',1);return;}
+ if(chBusy)return;chBusy=true;
+ hint('Проверяю '+ip+'…');
+ getWled(ip,'info').then(d=>{
+  const n=+(d&&d.leds&&d.leds.count)||0;
+  const p=[String((d&&d.name)||''),String((d&&d.ver)||'')];
+  if(n)p.push(n+' светодиодов');
+  hint(p.filter(Boolean).join(' · ')||'WLED отвечает');
+  let leds=0;
+  if(n&&n!==+st.wled_leds){leds=n;st.wled_leds=n;$('wled_leds').value=n;}
+  return saveIp(ip,leds).then(()=>{if(st.mode==='wled_fx')loadFx();});
+ },e=>hint(e.message,1)).then(()=>{chBusy=false;});
+}
+on($('btnCheck'),'click',check);
+on($('btnCalib'),'click',()=>{
+ flush();
+ fetch('api/calibrate',{method:'POST'}).then(r=>r.json()).then(d=>{
+  const b=$('btnCalib');b.disabled=true;
+  msg(d.started?'Калибровка: '+d.seconds+' с':'Калибровка уже идёт');
+  setTimeout(()=>{b.disabled=false;},(d.seconds||15)*1000);
+ },e=>msg('Ошибка: '+e.message,1));
+});
+on($('btnSaveIp'),'click',()=>{
+ const ip=$('wled_ip').value.trim();
+ if(!ipOk(ip)){hint('Некорректный IPv4: нужно 4 числа 0–255',1);return;}
+ saveIp(ip,0).then(()=>{if(st.mode==='wled_fx')loadFx();});
+});
+on($('btnFind'),'click',()=>{
+ const ip=$('wled_ip').value.trim();
+ if(!ipOk(ip)){hint('Некорректный IPv4: нужно 4 числа 0–255',1);return;}
+ const ul=$('nodes');ul.hidden=true;ul.textContent='';
+ hint('Ищу устройства в сети…');
+ getWled(ip,'nodes').then(d=>{
+  const a=(d&&Array.isArray(d.nodes))?d.nodes:[];
+  if(!a.length){hint('Других устройств не найдено');return;}
+  hint('Найдено: '+a.length+'. Нажмите на устройство, чтобы выбрать');
+  a.forEach(nd=>{
+   const li=document.createElement('li'),b=document.createElement('button');
+   b.type='button';
+   const s1=document.createElement('span'),s2=document.createElement('span');
+   s1.textContent=String((nd&&nd.name)||'WLED');
+   s2.textContent=String((nd&&nd.ip)||'');s2.style.color='#8b97ab';
+   b.append(s1,s2);
+   on(b,'click',()=>{$('wled_ip').value=String((nd&&nd.ip)||'');ul.hidden=true;ul.textContent='';check();});
+   li.append(b);ul.append(li);
+  });
+  ul.hidden=false;
+ },e=>hint(e.message,1));
+});
+
+const clean=a=>{
+ const r=[];
+ (Array.isArray(a)?a:[]).forEach((x,i)=>{
+  const n=String(x==null?'':x).split('@')[0].trim();
+  if(n&&n!=='RSVD'&&n!=='-')r.push([i,n]);
+ });
+ return r;
+};
+function fill(list,el,cur,first){
+ el.textContent='';
+ const o=document.createElement('option');
+ o.value='-1';o.textContent=first;el.append(o);
+ list.forEach(p=>{
+  const op=document.createElement('option');
+  op.value=String(p[0]);op.textContent=p[0]+': '+p[1];el.append(op);
+ });
+ el.value=String(cur);
+ if(el.selectedIndex<0)el.value='-1';
+}
+function loadFx(){
+ const ip=String(st.wled_ip||$('wled_ip').value||'').trim();
+ if(!ipOk(ip)){hint('Сначала укажите IP ленты',1);return;}
+ if(cache&&cache.ip===ip){
+  fill(cache.eff,$('fx_id'),st.fx_id,'-1: оставить текущий');
+  fill(cache.pal,$('fx_pal'),st.fx_pal,'-1: оставить текущую');
+  return;
+ }
+ if(fxBusy)return;fxBusy=true;
+ $('fx_id').disabled=true;$('fx_pal').disabled=true;
+ Promise.all([getWled(ip,'eff'),getWled(ip,'pal')]).then(r=>{
+  cache={ip,eff:clean(r[0]),pal:clean(r[1])};
+  fill(cache.eff,$('fx_id'),st.fx_id,'-1: оставить текущий');
+  fill(cache.pal,$('fx_pal'),st.fx_pal,'-1: оставить текущую');
+ },e=>hint(e.message,1)).then(()=>{fxBusy=false;$('fx_id').disabled=false;$('fx_pal').disabled=false;});
+}
+
+fetch('api/settings').then(r=>{
+ if(!r.ok)throw new Error('HTTP '+r.status);
+ return r.json();
+}).then(d=>{
+ const s=(d&&d.settings)||{};
+ Object.keys(D).forEach(k=>{
+  const v=s[k];
+  if(v===undefined||v===null||v==='')return;
+  if(NUM[k]){const n=+v;if(!isNaN(n))st[k]=n;}else st[k]=String(v);
+ });
+ render();
+},e=>{msg('Ошибка загрузки: '+e.message,1);render();});
+})();
+</script>
+</body>
+</html>

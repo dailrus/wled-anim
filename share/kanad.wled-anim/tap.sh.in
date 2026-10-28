@@ -1,0 +1,6 @@
+#!/bin/sh
+# Запускается плагином ALSA "file" на каждое открытие звукового устройства.
+# Лежит в /tmp: если пакет удалят, звук не сломается — анализатор не найдётся,
+# и поток просто дочитывается в никуда.
+LD_LIBRARY_PATH=/opt/lib WLED_ANIM_VAR=@VAR@ /opt/bin/luajit @SHARE@/tap.lua 2>>/tmp/wled_anim.log
+exec cat >/dev/null

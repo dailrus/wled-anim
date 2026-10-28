@@ -1,0 +1,16 @@
+name: kanad/wled-anim
+version: 1.0.0
+license: MIT
+description: WLED Animation (wled_anim) — светомузыка Станции на ленту WLED; веб-интерфейс на порту 8098
+targets: [yandexmini_2]
+files:
+  bin/wled_anim: bin/wled_anim
+  share/kanad.wled-anim/: share/kanad.wled-anim/
+conflicts: [kanad/ledviz]
+replaces: [kanad/ledviz]
+entware:
+  packages: [luajit, curl]
+services:
+  wled-anim:
+    exec: [bin/wled_anim, start]
+    oneshot: true

@@ -1,0 +1,3 @@
+# собранные пакеты публикуются в GitHub Releases
+dist/
+*.yampkg
