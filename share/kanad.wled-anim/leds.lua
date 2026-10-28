@@ -37,7 +37,7 @@ local function log(s) io.stderr:write(os.date("%F %T "), s, "\n"); io.stderr:flu
 
 -- настройки (файл settings: key=value), перечитываются раз в секунду
 local cfg = { brightness = 0.8, speed = 1.0, mode = "rainbow",
-              output = "wled", wled_ip = "192.168.3.43", wled_leds = 188,
+              output = "wled", wled_ip = "", wled_leds = 188,
               fps = 50, gamma = 2.2, smooth = 1.0, gate = 0.08, alice_mute = 1,
               fx_id = -1, fx_pal = -1, fx_color = 1, fx_floor = 0.2, fx_ix = 1, fx_fps = 30 }
 
@@ -66,7 +66,9 @@ local function load_cfg()
     if k then cfg[k] = (k == "wled_ip") and v or (tonumber(v) or v) end
   end
   f:close()
-  if cfg.wled_ip ~= wled_ip_cur then
+  -- IP ленты задаётся в интерфейсе; пока его нет (или он не IPv4) — ничего не шлём
+  if not cfg.wled_ip:match("^%d+%.%d+%.%d+%.%d+$") then cfg.wled_ip = "" end
+  if cfg.wled_ip ~= wled_ip_cur and cfg.wled_ip ~= "" then
     wled_addr.family = 2
     wled_addr.port = C.htons(WLED_PORT)
     wled_addr.addr = C.inet_addr(cfg.wled_ip)
@@ -82,7 +84,7 @@ local function load_cfg()
   end
 end
 
-local function use_wled() return cfg.output ~= "off" end   -- output: wled | off
+local function use_wled() return cfg.output ~= "off" and cfg.wled_ip ~= "" end   -- output: wled | off
 
 local function udp_wled(buf, len) C.sendto(sock, buf, len, 0, wled_addr, ffi.sizeof(wled_addr)) end
 
