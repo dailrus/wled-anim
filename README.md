@@ -1,12 +1,15 @@
 # WLED Animation (`wled_anim`)
 
+[![Последний релиз](https://img.shields.io/github/v/release/dailrus/wled-anim?label=%D0%B2%D0%B5%D1%80%D1%81%D0%B8%D1%8F)](https://github.com/dailrus/wled-anim/releases/latest)
+[![Скачать](https://img.shields.io/badge/%D1%81%D0%BA%D0%B0%D1%87%D0%B0%D1%82%D1%8C-wled--anim.yampkg-blue)](https://github.com/dailrus/wled-anim/releases/latest/download/wled-anim.yampkg)
+
 Светомузыка для Яндекс Станции Mini 2 на адресной ленте [WLED](https://kno.wled.ge/):
 колонка анализирует звук, который сама играет, и в такт рисует анимацию на ленте.
-Пакет для менеджера [yam](https://github.com/nyakokitsu/yam) — `kanad/wled-anim`
+Пакет для менеджера [yam](https://github.com/nyakokitsu/yam) — `dailrus/wled-anim`
 
 ## Возможности
 
-- Анимации: радуга от центра, одноцветная, VU-метр, пульс, спектр
+- Анимации: радуга от центра, одноцветная (свой цвет или перелив), VU-метр, пульс, спектр
   (бас / середина / верх) и «эффект WLED под музыку» — любой эффект и палитра
   самой ленты, яркость и интенсивность которых следуют за музыкой.
 - Веб-интерфейс на порту 8098: IP ленты с проверкой и поиском, выбор анимации,
@@ -25,13 +28,17 @@
 
 ## Установка
 
-Скачайте `wled-anim-1.0.0.yampkg` из [Releases](../../releases) и выполните:
+Ссылка ниже всегда ведёт на пакет из последнего релиза (номер версии — на
+значке вверху):
 
 ```sh
-adb push wled-anim-1.0.0.yampkg /tmp/
-adb shell /data/yam/bin/yam-run install --yes /tmp/wled-anim-1.0.0.yampkg
+curl -L -o wled-anim.yampkg https://github.com/dailrus/wled-anim/releases/latest/download/wled-anim.yampkg
+adb push wled-anim.yampkg /tmp/
+adb shell /data/yam/bin/yam-run install --yes /tmp/wled-anim.yampkg
 adb shell /data/yam/bin/wled_anim start
 ```
+
+Обновление — те же команды: yam заменит установленную версию, настройки сохранятся.
 
 Затем откройте `http://<IP станции>:8098` и укажите IP ленты.
 
@@ -53,8 +60,29 @@ adb shell "mount -o remount,rw / && cp /tmp/S99wled_anim /etc/init.d/ && chmod 7
 
 - `wled_anim start | stop | restart | status` (`stop` возвращает штатный звук).
 - Настройки: `/data/yam/var/wled_anim/settings` — их же меняет веб-интерфейс.
-- Удаление: `wled_anim stop`, затем `yam-run remove kanad/wled-anim` и удалить
+- Удаление: `wled_anim stop`, затем `yam-run remove dailrus/wled-anim` и удалить
   `/etc/init.d/S99wled_anim`, если ставили автозапуск.
+
+## Нагрузка на Станцию
+
+Замер на Mini 2 во время воспроизведения музыки (версия 1.1.0):
+
+| Процесс | Память (PSS) | ЦП, % одного ядра |
+|---|---|---|
+| `leds.lua` — анимация и отправка на ленту | 3,2 МБ | 3,3% |
+| `tap.lua` — анализ звука (только пока открыт звук) | 1,3 МБ | 4,2% |
+| `web.lua` — веб-интерфейс | 0,9 МБ | ~0% (только при запросах) |
+| `voice.sh` + `tail` — голосовые команды | 0,4 МБ | 0,3% |
+| `tap.sh` — обвязка анализатора | 0,1 МБ | 0% |
+| **Итого** | **≈ 6 МБ** (≈ 9 МБ RSS) | **≈ 8% одного ядра ≈ 2% всего ЦП** (4 ядра) |
+
+- Для сравнения: у Mini 2 244 МБ памяти, свободно обычно около 100 МБ.
+- Диск: пакет ≈ 90 КБ, настройки 8 КБ, временные файлы в `/tmp` (RAM) ≈ 30 КБ.
+- Сеть: пока играет музыка — ≈ 30 КБ/с на ленту (50 кадров/с по ~570 байт на
+  188 светодиодов); в режиме «Эффект WLED» ≈ 3 КБ/с; в тишине — ничего.
+- Не измерено отдельно: копирование звука плагином ALSA внутри `mediad`
+  (входит в его собственную нагрузку) и нагрузка в тишине (анализатора нет,
+  `leds.lua` просыпается 20 раз в секунду — должно быть заметно меньше 1%).
 
 ## Как это устроено
 
@@ -70,8 +98,11 @@ adb shell "mount -o remount,rw / && cp /tmp/S99wled_anim /etc/init.d/ && chmod 7
 ## Сборка
 
 ```sh
-yam-publish pack --source . --platform yandexmini_2 --profiles <каталог platforms из yam> --output dist/wled-anim-1.0.0.yampkg
+yam-publish pack --source . --platform yandexmini_2 --profiles <каталог platforms из yam> --output dist/wled-anim-<версия>.yampkg
 ```
+
+В релиз кладутся два одинаковых файла: `wled-anim-<версия>.yampkg` и
+`wled-anim.yampkg` — на второй ведёт постоянная ссылка «последний релиз».
 
 ## Об авторстве
 

@@ -1,12 +1,12 @@
 #!/bin/sh
-# WLED Animation (yam-пакет kanad/wled-anim): wled_anim start | stop | restart | status
+# WLED Animation (yam-пакет dailrus/wled-anim): wled_anim start | stop | restart | status
 #   start   — собрать конфиг ALSA с отводом звука, подключить его bind mount'ом
 #             и запустить демоны: анимация (leds.lua), веб-интерфейс :8098 (web.lua),
 #             голосовое управление (voice.sh)
 #   stop    — остановить демоны и вернуть штатный звук (mediad перезапускается)
 # Настройки: /data/yam/var/wled_anim/settings (их же меняет веб-интерфейс).
 ROOT=${YAM_ROOT:-/data/yam}
-SHARE=$ROOT/share/kanad.wled-anim
+SHARE=$ROOT/share/dailrus.wled-anim
 VAR=$ROOT/var/wled_anim
 RUN=/tmp/wled_anim
 LUAJIT=/opt/bin/luajit
@@ -62,12 +62,16 @@ stop_daemons() {
   P=$(ps w | grep '[t]ail -n 0 -F /data/quasar/daemons_logs/maind.log' | awk '{print $1}'); [ -z "$P" ] || kill $P
 }
 
-stop_legacy() {  # демоны прежних версий (kanad/ledviz, /data/opt/ledviz) держат те же порты
+stop_legacy() {  # демоны прежних версий (kanad/wled-anim, kanad/ledviz, /data/opt/ledviz) держат те же порты
   for pf in /tmp/ledviz/leds.pid /tmp/ledviz/web.pid /tmp/ledviz/voice.pid /tmp/ledviz.pid /tmp/ledviz_voice.pid; do
     pid=$(cat "$pf" 2>/dev/null); [ -n "$pid" ] && kill "$pid" 2>/dev/null; rm -f "$pf"
   done
-  P=$(ps w | grep -E '[l]uajit .*/(kanad\.ledviz|opt/ledviz)/|[s]h .*/(kanad\.ledviz|opt/ledviz)/voice\.sh' | awk '{print $1}')
-  [ -z "$P" ] || { kill $P; sleep 1; }
+  P=$(ps w | grep -E '[l]uajit .*/(kanad\.wled-anim|kanad\.ledviz|opt/ledviz)/|[s]h .*/(kanad\.wled-anim|kanad\.ledviz|opt/ledviz)/voice\.sh' | awk '{print $1}')
+  [ -z "$P" ] || {
+    kill $P
+    P=$(ps w | grep '[t]ail -n 0 -F /data/quasar/daemons_logs/maind.log' | awk '{print $1}'); [ -z "$P" ] || kill $P
+    sleep 1
+  }
 }
 
 case "${1:-}" in

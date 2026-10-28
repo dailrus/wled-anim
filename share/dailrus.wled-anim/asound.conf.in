@@ -1,4 +1,4 @@
-# Штатный /etc/asound.conf + отвод копии звука в анализатор светомузыки (yam-пакет kanad/wled-anim).
+# Штатный /etc/asound.conf + отвод копии звука в анализатор светомузыки (yam-пакет dailrus/wled-anim).
 # Собирается командой `wled_anim start` в /tmp и подключается bind mount; после перезагрузки — оригинал.
 pcm.!default {
   type asym

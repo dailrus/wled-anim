@@ -1,4 +1,4 @@
--- Демон светомузыки WLED Animation (yam-пакет kanad/wled-anim): лента WLED.
+-- Демон светомузыки WLED Animation (yam-пакет dailrus/wled-anim): лента WLED.
 -- Уровни приходят от tap.lua UDP-датаграммами на 127.0.0.1:21399 (раз в 10 мс) —
 -- демон спит в poll() и просыпается сразу по данным. Со старым tap.lua (без UDP)
 -- работает по-прежнему через опрос /tmp/wled_anim/level.
@@ -39,7 +39,10 @@ local function log(s) io.stderr:write(os.date("%F %T "), s, "\n"); io.stderr:flu
 local cfg = { brightness = 0.8, speed = 1.0, mode = "rainbow",
               output = "wled", wled_ip = "", wled_leds = 188,
               fps = 50, gamma = 2.2, smooth = 1.0, gate = 0.08, alice_mute = 1,
-              fx_id = -1, fx_pal = -1, fx_color = 1, fx_floor = 0.2, fx_ix = 1, fx_fps = 30 }
+              fx_id = -1, fx_pal = -1, fx_color = 1, fx_floor = 0.2, fx_ix = 1, fx_fps = 30,
+              mono_color = "auto" }
+local STR_KEYS = { wled_ip = true, mono_color = true }   -- не превращать в числа ("123456" — цвет)
+local mono_rgb = nil            -- {r, g, b} 0..1 для mode=mono; nil — цвет меняется по музыке
 
 -- WLED: UDP-сокет и адрес, пересобирается при смене wled_ip
 local WLED_PORT, WLED_TIMEOUT = 21324, 2   -- через 2 с без пакетов WLED вернёт свой эффект
@@ -63,9 +66,11 @@ local function load_cfg()
   if not f then return end
   for line in f:lines() do
     local k, v = line:match("^%s*([%w_]+)%s*=%s*(%S+)")
-    if k then cfg[k] = (k == "wled_ip") and v or (tonumber(v) or v) end
+    if k then cfg[k] = STR_KEYS[k] and v or (tonumber(v) or v) end
   end
   f:close()
+  local cr, cg, cb = tostring(cfg.mono_color):lower():match("^(%x%x)(%x%x)(%x%x)$")
+  mono_rgb = cr and { tonumber(cr, 16) / 255, tonumber(cg, 16) / 255, tonumber(cb, 16) / 255 } or nil
   -- IP ленты задаётся в интерфейсе; пока его нет (или он не IPv4) — ничего не шлём
   if not cfg.wled_ip:match("^%d+%.%d+%.%d+%.%d+$") then cfg.wled_ip = "" end
   if cfg.wled_ip ~= wled_ip_cur and cfg.wled_ip ~= "" then
@@ -289,8 +294,15 @@ local function draw_wled(dt, fade)
       local x = clamp((reach - d) / edge + 0.5, 0, 1)
       mask = x * x * (3 - 2 * x)                          -- smoothstep, без ступенек
       local wave = 0.55 + 0.45 * math.cos((d * 3 - spin) * 2 * math.pi)
-      local h = mono and hue or (hue + d * 240)
-      r, g, bl = hsv(h, sat, mask * wave)
+      if mono and mono_rgb then                           -- mono с выбранным цветом
+        local v, wf = mask * wave, 1 - sat                -- на вспышке цвет слегка белеет
+        r = (mono_rgb[1] * sat + wf) * v
+        g = (mono_rgb[2] * sat + wf) * v
+        bl = (mono_rgb[3] * sat + wf) * v
+      else
+        local h = mono and hue or (hue + d * 240)
+        r, g, bl = hsv(h, sat, mask * wave)
+      end
     end
     local s = spark[j] * sd
     if math.random() < sp then s = 0.6 + 0.4 * math.random() end

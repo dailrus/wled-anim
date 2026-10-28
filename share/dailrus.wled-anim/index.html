@@ -18,6 +18,7 @@ h2{margin:2px 0 8px;font-size:12px;text-transform:uppercase;letter-spacing:.05em
 label{display:block;margin:10px 0 4px;font-size:12.5px;color:var(--m)}
 input[type=text],input[type=number],select{width:100%;padding:8px;border:1px solid var(--l);border-radius:8px;background:#131a26;color:var(--fg);font-size:14px}
 input[type=range]{display:block;width:100%;margin:0;accent-color:var(--a)}
+input[type=color]{display:block;width:100%;height:40px;padding:2px;border:1px solid var(--l);border-radius:8px;background:#131a26}
 button{padding:8px 11px;border:1px solid #33425c;border-radius:8px;background:#233049;color:var(--fg);font-size:13px}
 button:active{background:var(--a);border-color:var(--a);color:#0b1220}
 .row{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
@@ -75,6 +76,11 @@ button:active{background:var(--a);border-color:var(--a);color:#0b1220}
 <option value="spectrum">Спектр (бас/середина/верх)</option>
 <option value="wled_fx">Эффект WLED под музыку</option>
 </select>
+<div id="monoBlock" hidden>
+<label class="chk"><input type="checkbox" id="mono_auto"> Менять цвет по музыке</label>
+<label for="mono_pick">Цвет</label>
+<input type="color" id="mono_pick" value="#ff3c00">
+</div>
 <div id="fxBlock" hidden>
 <label for="fx_id">Эффект WLED</label>
 <select id="fx_id"><option value="-1">-1: оставить текущий</option></select>
@@ -111,7 +117,7 @@ button:active{background:var(--a);border-color:var(--a);color:#0b1220}
 'use strict';
 const $=id=>document.getElementById(id), on=(e,t,f)=>e.addEventListener(t,f), enc=encodeURIComponent;
 const D={output:'wled',mode:'rainbow',brightness:.8,speed:1,delay_ms:0,smooth:1,gate:.08,alice_mute:1,
-fx_id:-1,fx_pal:-1,fx_color:1,fx_ix:1,fx_floor:.2,wled_leds:188,wled_ip:''};
+fx_id:-1,fx_pal:-1,fx_color:1,fx_ix:1,fx_floor:.2,wled_leds:188,wled_ip:'',mono_color:'auto'};
 const NUM={brightness:1,speed:1,delay_ms:1,smooth:1,gate:1,alice_mute:1,fx_id:1,fx_pal:1,fx_color:1,fx_ix:1,fx_floor:1,wled_leds:1};
 const RNG=['brightness','speed','delay_ms','smooth','gate','fx_floor'], CHK=['alice_mute','fx_color','fx_ix'];
 const st={...D};
@@ -149,7 +155,14 @@ function put(k,v,now){pend[k]=v;clearTimeout(tm);now?flush():tm=setTimeout(flush
 function fxToggle(){
  const onFx=st.mode==='wled_fx';
  $('fxBlock').hidden=!onFx;
+ $('monoBlock').hidden=st.mode!=='mono';
  if(onFx)loadFx();
+}
+const hexOk=s=>/^[0-9a-f]{6}$/i.test(String(s));
+function renderMono(){
+ const auto=!hexOk(st.mono_color);
+ $('mono_auto').checked=auto;
+ if(!auto)$('mono_pick').value='#'+st.mono_color.toLowerCase();
 }
 function render(){
  document.querySelectorAll('input[name=output]').forEach(el=>{el.checked=el.value===st.output;});
@@ -157,8 +170,17 @@ function render(){
  RNG.forEach(k=>{$(k).value=toUi(k,st[k]);$(k+'_o').textContent=fmt(k,st[k]);});
  CHK.forEach(k=>{$(k).checked=!!+st[k];});
  ['fx_id','fx_pal'].forEach(k=>{$(k).value=st[k];});
+ renderMono();
  fxToggle();
 }
+on($('mono_auto'),'change',()=>{
+ st.mono_color=$('mono_auto').checked?'auto':$('mono_pick').value.slice(1);
+ put('mono_color',st.mono_color,1);
+});
+on($('mono_pick'),'input',()=>{
+ st.mono_color=$('mono_pick').value.slice(1);$('mono_auto').checked=false;
+ put('mono_color',st.mono_color,0);
+});
 
 document.querySelectorAll('input[name=output]').forEach(el=>on(el,'change',()=>{
  if(el.checked){st.output=el.value;put('output',el.value,1);}

@@ -19,7 +19,7 @@ ffi.cdef[[
 ]]
 local C = ffi.C
 
-local SHARE = os.getenv("WLED_ANIM_SHARE") or "/data/yam/share/kanad.wled-anim"
+local SHARE = os.getenv("WLED_ANIM_SHARE") or "/data/yam/share/dailrus.wled-anim"
 local VAR = os.getenv("WLED_ANIM_VAR") or "/data/yam/var/wled_anim"
 local SETTINGS = VAR .. "/settings"
 local PORT = tonumber(os.getenv("WLED_ANIM_PORT") or "8098")
@@ -52,6 +52,7 @@ local SCHEMA = {
   fx_id = { "int", -1, 255 }, fx_pal = { "int", -1, 255 },
   fx_color = { "int", 0, 1 }, fx_ix = { "int", 0, 1 },
   fx_floor = { "num", 0, 1 }, fx_fps = { "int", 5, 50 },
+  mono_color = { "color" },             -- auto (по музыке) или rrggbb
 }
 
 local function valid_ip(s)
@@ -69,6 +70,9 @@ local function check(k, v)
     if s[2][v] then return v end
   elseif s[1] == "ip" then
     if valid_ip(v) then return v end
+  elseif s[1] == "color" then
+    v = v:lower()
+    if v == "auto" or v:match("^%x%x%x%x%x%x$") then return v end
   else
     local n = tonumber(v)
     if n and n == n and n >= s[2] and n <= s[3] then
@@ -121,7 +125,8 @@ end
 local function settings_json()
   local parts = {}
   for k, v in pairs(read_settings()) do
-    local n = SCHEMA[k][1] ~= "enum" and SCHEMA[k][1] ~= "ip" and tonumber(v)
+    local ty = SCHEMA[k][1]
+    local n = (ty == "num" or ty == "int") and tonumber(v)
     parts[#parts + 1] = json_str(k) .. ":" .. (n and tostring(n) or json_str(v))
   end
   return "{" .. table.concat(parts, ",") .. "}"

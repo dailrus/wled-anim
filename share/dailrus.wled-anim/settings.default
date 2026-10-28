@@ -1,11 +1,13 @@
 # Настройки WLED Animation; их же меняет веб-интерфейс http://<станция>:8098
 # brightness — яркость 0..1, speed — скорость смены цвета
 # mode — rainbow | mono | vu | pulse | spectrum | wled_fx
+# mono_color — цвет для mode=mono: rrggbb (например ff3c00) или auto — меняется по музыке
 # output — wled (светомузыка на ленте) | off (выключена)
 # delay_ms — задержка света относительно звука, мс (0..300, шаг 10; 0 по умолчанию)
 brightness=0.8
 speed=1.0
 mode=rainbow
+mono_color=auto
 output=wled
 wled_ip=
 wled_leds=188
