@@ -74,6 +74,13 @@ adb shell "mount -o remount,rw / && cp /tmp/S99wled_anim /etc/init.d/ && chmod 7
 yam-publish pack --source . --platform yandexmini_2 --profiles <каталог platforms из yam> --output dist/wled-anim-1.0.0.yampkg
 ```
 
+## Об авторстве
+
+Проект сделан с помощью [Claude](https://claude.com/claude-code) (Claude Code,
+Anthropic) по идее и под руководством [dailrus](https://github.com/dailrus).
+Страницу интерфейса и анимации VU-метр, пульс и спектр по заданию Claude
+написал DeepSeek; Claude их проверил и доработал.
+
 ## Лицензия
 
 [MIT](LICENSE)
