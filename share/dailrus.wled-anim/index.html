@@ -109,6 +109,8 @@ button:active{background:var(--a);border-color:var(--a);color:#0b1220}
 <input type="range" id="speed" min="0" max="100" step="1">
 <div class="fld"><label for="gate">Порог тишины</label><output id="gate_o" for="gate">27</output></div>
 <input type="range" id="gate" min="0" max="100" step="1">
+<div class="fld"><label for="sensitivity">Чувствительность (меньше — мелкие всплески не видны)</label><output id="sensitivity_o" for="sensitivity">75</output></div>
+<input type="range" id="sensitivity" min="0" max="100" step="1">
 <label class="chk"><input type="checkbox" id="alice_mute"> Гасить, когда говорит Алиса</label>
 </section>
 </main>
@@ -116,13 +118,13 @@ button:active{background:var(--a);border-color:var(--a);color:#0b1220}
 (()=>{
 'use strict';
 const $=id=>document.getElementById(id), on=(e,t,f)=>e.addEventListener(t,f), enc=encodeURIComponent;
-const D={output:'wled',mode:'rainbow',brightness:.8,speed:1,delay_ms:0,smooth:1,gate:.08,alice_mute:1,
+const D={output:'wled',mode:'rainbow',brightness:.8,speed:1,delay_ms:0,smooth:1,gate:.08,sensitivity:.75,alice_mute:1,
 fx_id:-1,fx_pal:-1,fx_color:1,fx_ix:1,fx_floor:.2,wled_leds:188,wled_ip:'',mono_color:'auto'};
-const NUM={brightness:1,speed:1,delay_ms:1,smooth:1,gate:1,alice_mute:1,fx_id:1,fx_pal:1,fx_color:1,fx_ix:1,fx_floor:1,wled_leds:1};
-const RNG=['brightness','speed','delay_ms','smooth','gate','fx_floor'], CHK=['alice_mute','fx_color','fx_ix'];
+const NUM={sensitivity:1,brightness:1,speed:1,delay_ms:1,smooth:1,gate:1,alice_mute:1,fx_id:1,fx_pal:1,fx_color:1,fx_ix:1,fx_floor:1,wled_leds:1};
+const RNG=['brightness','speed','delay_ms','smooth','gate','sensitivity','fx_floor'], CHK=['alice_mute','fx_color','fx_ix'];
 const st={...D};
 let pend={},tm=0,mt=0,cache=null,chBusy=false,fxBusy=false;
-const SC={brightness:1,speed:3,smooth:3,gate:.3,fx_floor:1};   // 100 на ползунке = это значение в settings
+const SC={brightness:1,speed:3,smooth:3,gate:.3,sensitivity:1,fx_floor:1};   // 100 на ползунке = это значение в settings
 const toUi=(k,v)=>k in SC?Math.round(+v/SC[k]*100):+v, fromUi=(k,u)=>k in SC?Math.round(+u/100*SC[k]*1000)/1000:+u;
 const fmt=(k,v)=>k==="delay_ms"?v+" мс":String(toUi(k,v));
 const msg=(t,err)=>{const m=$('msg');m.textContent=t;m.className=err?'err':'';clearTimeout(mt);

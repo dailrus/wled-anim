@@ -40,7 +40,7 @@ local cfg = { brightness = 0.8, speed = 1.0, mode = "rainbow",
               output = "wled", wled_ip = "", wled_leds = 188,
               fps = 50, gamma = 2.2, smooth = 1.0, gate = 0.08, alice_mute = 1,
               fx_id = -1, fx_pal = -1, fx_color = 1, fx_floor = 0.2, fx_ix = 1, fx_fps = 30,
-              mono_color = "auto" }
+              mono_color = "auto", sensitivity = 0.75 }
 local STR_KEYS = { wled_ip = true, mono_color = true }   -- не превращать в числа ("123456" — цвет)
 local mono_rgb = nil            -- {r, g, b} 0..1 для mode=mono; nil — цвет меняется по музыке
 
@@ -192,6 +192,13 @@ local function feed(b, m, tr, dt, t)
   flo_m = flo_m + (m - flo_m) * (m > flo_m and fu or fd)
   flo_t = flo_t + (tr - flo_t) * (tr > flo_t and fu or fd)
   local nb, nm, nt = norm(b, flo_b, peak_b), norm(m, flo_m, peak_m), norm(tr, flo_t, peak_t)
+  -- чувствительность: всплески ниже порога th не зажигают ленту (и не дают бит),
+  -- то, что выше, растягивается на весь диапазон. sensitivity 1 → th 0, 0 → th 0.6
+  local th = (1 - clamp(tonumber(cfg.sensitivity) or 0.75, 0, 1)) * 0.6
+  if th > 0 then
+    local k = 1 / (1 - th)
+    nb, nm, nt = max(0, (nb - th) * k), max(0, (nm - th) * k), max(0, (nt - th) * k)
+  end
   env_b = env(env_b, nb, dt, 0.16)
   env_m = env(env_m, nm, dt, 0.20)
   env_t = env(env_t, nt, dt, 0.10)

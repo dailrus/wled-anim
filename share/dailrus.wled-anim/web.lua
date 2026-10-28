@@ -53,6 +53,7 @@ local SCHEMA = {
   fx_color = { "int", 0, 1 }, fx_ix = { "int", 0, 1 },
   fx_floor = { "num", 0, 1 }, fx_fps = { "int", 5, 50 },
   mono_color = { "color" },             -- auto (по музыке) или rrggbb
+  sensitivity = { "num", 0, 1 },
 }
 
 local function valid_ip(s)
