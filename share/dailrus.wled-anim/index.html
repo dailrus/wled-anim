@@ -21,6 +21,7 @@ input[type=range]{display:block;width:100%;margin:0;accent-color:var(--a)}
 input[type=color]{display:block;width:100%;height:40px;padding:2px;border:1px solid var(--l);border-radius:8px;background:#131a26}
 button{padding:8px 11px;border:1px solid #33425c;border-radius:8px;background:#233049;color:var(--fg);font-size:13px}
 button:active{background:var(--a);border-color:var(--a);color:#0b1220}
+a.btn{display:inline-block;padding:8px 11px;border:1px solid #33425c;border-radius:8px;background:#233049;color:var(--fg);font-size:13px;text-decoration:none}
 .row{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
 .seg{display:flex;gap:6px;flex-wrap:wrap}
 .seg label{position:relative;display:inline-flex;margin:0;font-size:13px;color:var(--fg)}
@@ -34,6 +35,8 @@ button:active{background:var(--a);border-color:var(--a);color:#0b1220}
 .fld label{margin:10px 0 4px}
 .fld output{font-size:12px;color:var(--a)}
 .hint{margin:10px 0 0;font-size:12px;color:var(--m);word-break:break-word}
+footer{max-width:560px;margin:4px auto 8px;text-align:center;font-size:12px;color:var(--m)}
+footer a{color:var(--a);text-decoration:none}
 .nodes{list-style:none;margin:8px 0 0;padding:0;display:flex;flex-direction:column;gap:6px}
 .nodes button{display:flex;justify-content:space-between;gap:10px;width:100%;text-align:left}
 </style>
@@ -81,6 +84,10 @@ button:active{background:var(--a);border-color:var(--a);color:#0b1220}
 <label for="mono_pick">Цвет</label>
 <input type="color" id="mono_pick" value="#ff3c00">
 </div>
+<div id="ampBlock" hidden>
+<div class="fld"><label for="amp_bright">Яркость от громкости (0 — всегда полная)</label><output id="amp_bright_o" for="amp_bright">50</output></div>
+<input type="range" id="amp_bright" min="0" max="100" step="1">
+</div>
 <div id="fxBlock" hidden>
 <label for="fx_id">Эффект WLED</label>
 <select id="fx_id"><option value="-1">-1: оставить текущий</option></select>
@@ -109,22 +116,43 @@ button:active{background:var(--a);border-color:var(--a);color:#0b1220}
 <input type="range" id="speed" min="0" max="100" step="1">
 <div class="fld"><label for="gate">Порог тишины</label><output id="gate_o" for="gate">27</output></div>
 <input type="range" id="gate" min="0" max="100" step="1">
-<div class="fld"><label for="sensitivity">Чувствительность (меньше — мелкие всплески не видны)</label><output id="sensitivity_o" for="sensitivity">75</output></div>
-<input type="range" id="sensitivity" min="0" max="100" step="1">
 <label class="chk"><input type="checkbox" id="alice_mute"> Гасить, когда говорит Алиса</label>
 </section>
+<section class="card">
+<h2>Чувствительность</h2>
+<p class="hint">Меньше — мелкие частые всплески в этой полосе не зажигают ленту, сильные удары остаются яркими.</p>
+<div class="fld"><label for="sens_bass">Бас</label><output id="sens_bass_o" for="sens_bass">75</output></div>
+<input type="range" id="sens_bass" min="0" max="100" step="1">
+<div class="fld"><label for="sens_mid">Середина</label><output id="sens_mid_o" for="sens_mid">75</output></div>
+<input type="range" id="sens_mid" min="0" max="100" step="1">
+<div class="fld"><label for="sens_high">Верх</label><output id="sens_high_o" for="sens_high">75</output></div>
+<input type="range" id="sens_high" min="0" max="100" step="1">
+<div class="fld"><label for="flash_sens">Белая вспышка на ударе (0 — выключена)</label><output id="flash_sens_o" for="flash_sens">65</output></div>
+<input type="range" id="flash_sens" min="0" max="100" step="1">
+</section>
+<section class="card">
+<h2>Файл настроек</h2>
+<div class="row">
+<a class="btn" href="api/settings/export" download="wled-anim-settings.txt">Скачать настройки</a>
+<button type="button" id="btnImport">Загрузить из файла</button>
+<input type="file" id="importFile" accept=".txt,.conf,text/plain" hidden>
+</div>
+<p class="hint" id="importInfo">Файл — обычный текст «ключ=значение»; его можно поправить вручную. При загрузке всё проверяется: если есть ошибка, ничего не меняется.</p>
+</section>
 </main>
+<footer><a href="https://github.com/dailrus/wled-anim" target="_blank" rel="noopener">WLED Animation</a> <span id="ver"></span> · автор <a href="https://github.com/dailrus" target="_blank" rel="noopener">dailrus</a></footer>
 <script>
 (()=>{
 'use strict';
 const $=id=>document.getElementById(id), on=(e,t,f)=>e.addEventListener(t,f), enc=encodeURIComponent;
-const D={output:'wled',mode:'rainbow',brightness:.8,speed:1,delay_ms:0,smooth:1,gate:.08,sensitivity:.75,alice_mute:1,
-fx_id:-1,fx_pal:-1,fx_color:1,fx_ix:1,fx_floor:.2,wled_leds:188,wled_ip:'',mono_color:'auto'};
-const NUM={sensitivity:1,brightness:1,speed:1,delay_ms:1,smooth:1,gate:1,alice_mute:1,fx_id:1,fx_pal:1,fx_color:1,fx_ix:1,fx_floor:1,wled_leds:1};
-const RNG=['brightness','speed','delay_ms','smooth','gate','sensitivity','fx_floor'], CHK=['alice_mute','fx_color','fx_ix'];
+const SENS=['sens_bass','sens_mid','sens_high'];
+const D={output:'wled',mode:'rainbow',brightness:.8,speed:1,delay_ms:0,smooth:1,gate:.08,sens_bass:.75,sens_mid:.75,sens_high:.75,alice_mute:1,
+fx_id:-1,fx_pal:-1,fx_color:1,fx_ix:1,fx_floor:.2,amp_bright:.5,flash_sens:.65,wled_leds:188,wled_ip:'',mono_color:'auto'};
+const NUM={flash_sens:1,amp_bright:1,sens_bass:1,sens_mid:1,sens_high:1,brightness:1,speed:1,delay_ms:1,smooth:1,gate:1,alice_mute:1,fx_id:1,fx_pal:1,fx_color:1,fx_ix:1,fx_floor:1,wled_leds:1};
+const RNG=['brightness','speed','delay_ms','smooth','gate',...SENS,'fx_floor','amp_bright','flash_sens'], CHK=['alice_mute','fx_color','fx_ix'];
 const st={...D};
 let pend={},tm=0,mt=0,cache=null,chBusy=false,fxBusy=false;
-const SC={brightness:1,speed:3,smooth:3,gate:.3,sensitivity:1,fx_floor:1};   // 100 на ползунке = это значение в settings
+const SC={brightness:1,speed:3,smooth:3,gate:.3,sens_bass:1,sens_mid:1,sens_high:1,fx_floor:1,amp_bright:1,flash_sens:1};   // 100 на ползунке = это значение в settings
 const toUi=(k,v)=>k in SC?Math.round(+v/SC[k]*100):+v, fromUi=(k,u)=>k in SC?Math.round(+u/100*SC[k]*1000)/1000:+u;
 const fmt=(k,v)=>k==="delay_ms"?v+" мс":String(toUi(k,v));
 const msg=(t,err)=>{const m=$('msg');m.textContent=t;m.className=err?'err':'';clearTimeout(mt);
@@ -158,6 +186,7 @@ function fxToggle(){
  const onFx=st.mode==='wled_fx';
  $('fxBlock').hidden=!onFx;
  $('monoBlock').hidden=st.mode!=='mono';
+ $('ampBlock').hidden=!(st.mode==='rainbow'||st.mode==='mono');
  if(onFx)loadFx();
 }
 const hexOk=s=>/^[0-9a-f]{6}$/i.test(String(s));
@@ -301,17 +330,41 @@ function loadFx(){
  },e=>hint(e.message,1)).then(()=>{fxBusy=false;$('fx_id').disabled=false;$('fx_pal').disabled=false;});
 }
 
-fetch('api/settings').then(r=>{
- if(!r.ok)throw new Error('HTTP '+r.status);
- return r.json();
-}).then(d=>{
- const s=(d&&d.settings)||{};
+function apply(s){
  Object.keys(D).forEach(k=>{
   const v=s[k];
   if(v===undefined||v===null||v==='')return;
   if(NUM[k]){const n=+v;if(!isNaN(n))st[k]=n;}else st[k]=String(v);
  });
+ // до 1.3.0 чувствительность была общей — она же по умолчанию для всех полос
+ SENS.forEach(k=>{if(s[k]==null&&s.sensitivity!=null&&!isNaN(+s.sensitivity))st[k]=+s.sensitivity;});
+ cache=null;
  render();
+}
+
+on($('btnImport'),'click',()=>$('importFile').click());
+on($('importFile'),'change',()=>{
+ const f=$('importFile').files[0];
+ $('importFile').value='';
+ if(!f)return;
+ if(f.size>16000){msg('Файл слишком большой',1);return;}
+ const info=$('importInfo');
+ f.text().then(text=>fetch('api/settings/import',{method:'POST',headers:{'Content-Type':'text/plain; charset=utf-8'},body:text}))
+  .then(r=>r.json().then(d=>{if(!r.ok||!d.ok)throw new Error(d.error||('HTTP '+r.status));return d;}))
+  .then(d=>{
+   apply(d.settings||{});
+   info.className='hint';
+   info.textContent='Загружено параметров: '+d.applied+(d.skipped?', пропущено строк: '+d.skipped:'')+'.';
+   msg('Настройки загружены ✓');
+  },e=>{info.className='hint err';info.textContent='Не загружено: '+e.message;msg('Ошибка загрузки файла',1);});
+});
+
+fetch('api/settings').then(r=>{
+ if(!r.ok)throw new Error('HTTP '+r.status);
+ return r.json();
+}).then(d=>{
+ $('ver').textContent=d&&d.version?'v'+d.version:'';
+ apply((d&&d.settings)||{});
 },e=>{msg('Ошибка загрузки: '+e.message,1);render();});
 })();
 </script>

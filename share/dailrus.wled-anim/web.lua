@@ -27,6 +27,16 @@ local CURL = "/opt/bin/curl"
 local CALIB_PID = "/tmp/wled_anim/calib.pid"
 local CALIB_SEC = 15
 
+-- версия установленного пакета: yam кладёт файлы в pkgs/<namespace>/<имя>/<версия>/,
+-- а в share — ссылки на них; так номер всегда совпадает с установленным
+local VERSION = ""
+do
+  local h = io.popen("readlink -f " .. SHARE .. "/web.lua 2>/dev/null")
+  local real = h and h:read("*l") or ""
+  if h then h:close() end
+  VERSION = real:match("/pkgs/[^/]+/[^/]+/([^/]+)/") or ""
+end
+
 -- калибровка задержки: тестовый бит через штатный звук (идёт через отвод, как музыка)
 local function calib_running()
   local f = io.open(CALIB_PID)
@@ -53,7 +63,10 @@ local SCHEMA = {
   fx_color = { "int", 0, 1 }, fx_ix = { "int", 0, 1 },
   fx_floor = { "num", 0, 1 }, fx_fps = { "int", 5, 50 },
   mono_color = { "color" },             -- auto (по музыке) или rrggbb
-  sensitivity = { "num", 0, 1 },
+  amp_bright = { "num", 0, 1 },         -- rainbow/mono: яркость от громкости
+  flash_sens = { "num", 0, 1 },         -- чувствительность белой вспышки (0 — выкл)
+  sensitivity = { "num", 0, 1 },        -- общая (до 1.3.0); теперь по полосам:
+  sens_bass = { "num", 0, 1 }, sens_mid = { "num", 0, 1 }, sens_high = { "num", 0, 1 },
 }
 
 local function valid_ip(s)
@@ -166,10 +179,29 @@ local function send_all(fd, s)
   end
 end
 
-local function respond(fd, code, ctype, body)
+local function respond(fd, code, ctype, body, extra)
   send_all(fd, string.format(
-    "HTTP/1.1 %d %s\r\nContent-Type: %s\r\nContent-Length: %d\r\nCache-Control: no-store\r\nConnection: close\r\n\r\n",
-    code, STATUS[code] or "", ctype, #body) .. body)
+    "HTTP/1.1 %d %s\r\nContent-Type: %s\r\nContent-Length: %d\r\nCache-Control: no-store\r\n%sConnection: close\r\n\r\n",
+    code, STATUS[code] or "", ctype, #body, extra or "") .. body)
+end
+
+-- импорт файла настроек (формат как у settings): все известные ключи проверяются,
+-- при любой ошибке ничего не применяется; комментарии и чужие ключи пропускаются
+local function import_settings(text)
+  local upd, n, skipped, errs = {}, 0, 0, {}
+  for line in (text .. "\n"):gmatch("([^\r\n]*)\r?\n") do
+    local k, v = line:match("^%s*([%w_]+)%s*=%s*(%S+)")
+    if k and SCHEMA[k] then
+      local val, err = check(k, v)
+      if val then upd[k], n = val, n + 1 else errs[#errs + 1] = err end
+    elseif k or (line:match("%S") and not line:match("^%s*#")) then
+      skipped = skipped + 1
+    end
+  end
+  if #errs > 0 then return nil, table.concat(errs, "; ") end
+  if n == 0 then return nil, "в файле нет ни одной настройки WLED Animation" end
+  write_settings(upd)
+  return n, skipped
 end
 
 local pfd = ffi.new("struct pollfd[1]")
@@ -209,7 +241,8 @@ local function handle(fd)
     return respond(fd, 200, "text/html; charset=utf-8", html)
 
   elseif route == "api/settings" and method == "GET" then
-    return respond(fd, 200, "application/json", '{"settings":' .. settings_json() .. "}")
+    return respond(fd, 200, "application/json",
+      '{"version":' .. json_str(VERSION) .. ',"settings":' .. settings_json() .. "}")
 
   elseif route == "api/settings" and method == "POST" then
     local upd, n = {}, 0
@@ -220,6 +253,17 @@ local function handle(fd)
     end
     if n > 0 then write_settings(upd) end
     return respond(fd, 200, "application/json", '{"ok":true,"settings":' .. settings_json() .. "}")
+
+  elseif route == "api/settings/export" and method == "GET" then
+    local text = read_file(SETTINGS) or ""
+    return respond(fd, 200, "text/plain; charset=utf-8", text,
+      'Content-Disposition: attachment; filename="wled-anim-settings.txt"\r\n')
+
+  elseif route == "api/settings/import" and method == "POST" then
+    local n, info = import_settings(body or "")
+    if not n then return respond(fd, 400, "application/json", '{"ok":false,"error":' .. json_str(info) .. "}") end
+    return respond(fd, 200, "application/json", string.format(
+      '{"ok":true,"applied":%d,"skipped":%d,"settings":%s}', n, info, settings_json()))
 
   elseif route == "api/calibrate" and method == "POST" then
     local started = calib_start()

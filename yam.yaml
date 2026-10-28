@@ -1,5 +1,5 @@
 name: dailrus/wled-anim
-version: 1.2.0
+version: 1.6.0
 license: MIT
 description: WLED Animation (wled_anim) — светомузыка Станции на ленту WLED; веб-интерфейс на порту 8098
 targets: [yandexmini_2]

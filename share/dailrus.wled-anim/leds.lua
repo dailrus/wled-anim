@@ -40,7 +40,7 @@ local cfg = { brightness = 0.8, speed = 1.0, mode = "rainbow",
               output = "wled", wled_ip = "", wled_leds = 188,
               fps = 50, gamma = 2.2, smooth = 1.0, gate = 0.08, alice_mute = 1,
               fx_id = -1, fx_pal = -1, fx_color = 1, fx_floor = 0.2, fx_ix = 1, fx_fps = 30,
-              mono_color = "auto", sensitivity = 0.75 }
+              mono_color = "auto", amp_bright = 0.5, flash_sens = 0.65 }   -- sens_bass/sens_mid/sens_high: см. sens_cut
 local STR_KEYS = { wled_ip = true, mono_color = true }   -- не превращать в числа ("123456" — цвет)
 local mono_rgb = nil            -- {r, g, b} 0..1 для mode=mono; nil — цвет меняется по музыке
 
@@ -106,8 +106,11 @@ end
 local env_b, env_m, env_t = 0, 0, 0
 local peak_b, peak_m, peak_t = 0.02, 0.02, 0.02
 local flo_b, flo_m, flo_t = 0, 0, 0          -- «пол» полосы: уровень ровного фона
+local ref_b, ref_m, ref_t = 0.02, 0.01, 0.005  -- громкость полосы в громкой части трека (пик за ~30 с)
+local gate_open = false
 local dbg_gate_t = 0
 local avg_b, beat_cond, last_beat = 0, false, 0
+local flash_cond, last_flash = false, 0
 local flash, hue, hue_kick, spin = 0, 0, 0, 0
 local last_data_t, last_loud_t = -10, -10
 local lat_sum, lat_n, lat_max = 0, 0, 0     -- задержка tap → отправка (для отладки)
@@ -158,19 +161,31 @@ local function alice_mute(t)
   return alice_state ~= "IDLE" or t < alice_until
 end
 
--- шумовой гейт: громкость сравнивается с обычной громкостью трека (медленный пик);
--- тише gate от неё — тишина, вдвое громче порога — полная светомузыка
+-- шумовой гейт: громкость сравнивается с обычной громкостью трека (медленный пик).
+-- С гистерезисом: открывается громче 2·gate, закрывается тише gate, между ними
+-- держит состояние — негромкая музыка около порога не дёргает всю ленту.
 local ref, pres = 0.05, 0
 
 -- уровень полосы 0..1: насколько выше «пола» (fl) относительно пика (pk)
-local function norm(x, fl, pk) return 0.85 * clamp((x - fl) / max(pk - fl, pk * 0.2), 0, 1) + 0.15 * x / pk end
+local function norm(x, fl, pk) return 0.85 * clamp((x - fl) / max(pk - fl, pk * 0.35), 0, 1) + 0.15 * x / pk end
+
+-- отсечка по чувствительности полосы: 1 → без отсечки, 0 → порог 0.6.
+-- Нет своего значения — общий sensitivity из прежних версий, иначе 0.75.
+local function sens_cut(x, sens)
+  local th = (1 - clamp(tonumber(sens) or tonumber(cfg.sensitivity) or 0.75, 0, 1)) * 0.6
+  if th <= 0 then return x end
+  return max(0, (x - th) / (1 - th))
+end
 
 local function feed(b, m, tr, dt, t)
   last_data_t = t
   local sum = b + m + tr
   ref = max(ref * exp(-dt / 20), sum, 0.02)
   local gate = clamp(tonumber(cfg.gate) or 0.08, 0, 0.5)
-  local target = (sum > 0.003) and clamp((sum / ref - gate) / max(gate, 0.01), 0, 1) or 0
+  local q = sum / ref
+  if sum <= 0.003 or q < gate then gate_open = false
+  elseif q > 2 * gate then gate_open = true end
+  local target = gate_open and 1 or 0
   if alice_mute(t) then target = 0 end
   pres = pres + (target - pres) * ease(target > pres and 0.005 or 0.25, dt)   -- открывается сразу, закрывается плавно
   if pres > 0.05 then last_loud_t = t end
@@ -179,11 +194,13 @@ local function feed(b, m, tr, dt, t)
     log(string.format("gate: sum %.4f ref %.4f q %.3f target %.2f pres %.2f", sum, ref, sum / ref, target, pres))
   end
   b, m, tr = b * pres, m * pres, tr * pres
-  local pd = exp(-dt / 6.7)                    -- автоусиление: пик спадает за ~7 с
-  local pmin = 0.15 * ref                      -- но тихое место не раздувается до максимума
-  peak_b = max(peak_b * pd, b, 0.01, pmin * 0.5)
-  peak_m = max(peak_m * pd, m, 0.005, pmin * 0.3)
-  peak_t = max(peak_t * pd, tr, 0.003, pmin * 0.2)
+  local pd = exp(-dt / 6.7)                    -- автоусиление: пик спадает за ~7 с,
+  local rd = exp(-dt / 30)                     -- но не ниже 40% громкой части трека:
+  ref_b, ref_m, ref_t = max(ref_b * rd, b), max(ref_m * rd, m), max(ref_t * rd, tr)
+  -- усиление не больше ~2,5× — негромкое место темнее и спокойнее, а не раздуто до мерцания
+  peak_b = max(peak_b * pd, b, 0.01, 0.4 * ref_b)
+  peak_m = max(peak_m * pd, m, 0.005, 0.4 * ref_m)
+  peak_t = max(peak_t * pd, tr, 0.003, 0.4 * ref_t)
   -- «пол» полосы: к провалам опускается быстро (~0,3 с), к ровному гулу поднимается
   -- медленно (~3 с). Свет показывает, насколько звук выше пола, — постоянный бас
   -- не держит ленту зажжённой; 15% «как раньше» оставляют немного тела.
@@ -192,13 +209,9 @@ local function feed(b, m, tr, dt, t)
   flo_m = flo_m + (m - flo_m) * (m > flo_m and fu or fd)
   flo_t = flo_t + (tr - flo_t) * (tr > flo_t and fu or fd)
   local nb, nm, nt = norm(b, flo_b, peak_b), norm(m, flo_m, peak_m), norm(tr, flo_t, peak_t)
-  -- чувствительность: всплески ниже порога th не зажигают ленту (и не дают бит),
-  -- то, что выше, растягивается на весь диапазон. sensitivity 1 → th 0, 0 → th 0.6
-  local th = (1 - clamp(tonumber(cfg.sensitivity) or 0.75, 0, 1)) * 0.6
-  if th > 0 then
-    local k = 1 / (1 - th)
-    nb, nm, nt = max(0, (nb - th) * k), max(0, (nm - th) * k), max(0, (nt - th) * k)
-  end
+  -- чувствительность (отдельно бас/середина/верх): всплески ниже порога не зажигают
+  -- ленту (и не дают бит), то, что выше, растягивается на весь диапазон
+  nb, nm, nt = sens_cut(nb, cfg.sens_bass), sens_cut(nm, cfg.sens_mid), sens_cut(nt, cfg.sens_high)
   env_b = env(env_b, nb, dt, 0.16)
   env_m = env(env_m, nm, dt, 0.20)
   env_t = env(env_t, nt, dt, 0.10)
@@ -207,10 +220,18 @@ local function feed(b, m, tr, dt, t)
   local cond = nb > 0.6 and nb > avg_b * 1.5
   if cond and not beat_cond and t - last_beat > 0.15 then
     last_beat = t
-    flash = 1
     hue_kick = hue_kick + 35
   end
   beat_cond = cond
+  -- белая вспышка — свой порог по flash_sens (0 — без вспышек, 0.65 — как скачок цвета,
+  -- 1 — на любой заметный удар): уровень выше 0.95..0.4 и в 2.2..1.1 раза выше среднего
+  local fs = clamp(tonumber(cfg.flash_sens) or 0.65, 0, 1)
+  local fcond = fs > 0 and nb > 0.95 - 0.55 * fs and nb > avg_b * (2.2 - 1.08 * fs)
+  if fcond and not flash_cond and t - last_flash > 0.15 then
+    last_flash = t
+    flash = 1
+  end
+  flash_cond = fcond
 end
 
 local last_seq, last_file_seq = nil, nil
@@ -277,6 +298,9 @@ local function draw_wled(dt, fade)
   if mv == 1 then vu_peak = max(vu_peak - dt * 0.5, vlen) end
   local peak_w = 1.5 / n                                  -- полуширина пиковой точки
   local pulse_v = clamp(0.08 + 0.92 * env_b, 0, 1)        -- яркость pulse по басу
+  -- rainbow/mono: яркость столба от громкости баса (amp_bright 0 — всегда полная)
+  local ab = clamp(tonumber(cfg.amp_bright) or 0.5, 0, 1)
+  local amp = 1 - ab + ab * clamp(env_b, 0, 1)
   for j = 0, n - 1 do
     local d = abs(j / half - 0.5) * 2                     -- 0 в центре, 1 на краях
     local r, g, bl, mask
@@ -300,7 +324,7 @@ local function draw_wled(dt, fade)
     else                                                  -- rainbow / mono (по умолчанию)
       local x = clamp((reach - d) / edge + 0.5, 0, 1)
       mask = x * x * (3 - 2 * x)                          -- smoothstep, без ступенек
-      local wave = 0.55 + 0.45 * math.cos((d * 3 - spin) * 2 * math.pi)
+      local wave = (0.55 + 0.45 * math.cos((d * 3 - spin) * 2 * math.pi)) * amp
       if mono and mono_rgb then                           -- mono с выбранным цветом
         local v, wf = mask * wave, 1 - sat                -- на вспышке цвет слегка белеет
         r = (mono_rgb[1] * sat + wf) * v
