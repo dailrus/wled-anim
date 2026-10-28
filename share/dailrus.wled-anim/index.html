@@ -21,6 +21,9 @@ input[type=range]{display:block;width:100%;margin:0;accent-color:var(--a)}
 input[type=color]{display:block;width:100%;height:40px;padding:2px;border:1px solid var(--l);border-radius:8px;background:#131a26}
 button{padding:8px 11px;border:1px solid #33425c;border-radius:8px;background:#233049;color:var(--fg);font-size:13px}
 button:active{background:var(--a);border-color:var(--a);color:#0b1220}
+[hidden]{display:none!important}
+.cols{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.cols label{margin-top:8px}
 a.btn{display:inline-block;padding:8px 11px;border:1px solid #33425c;border-radius:8px;background:#233049;color:var(--fg);font-size:13px;text-decoration:none}
 .row{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
 .seg{display:flex;gap:6px;flex-wrap:wrap}
@@ -88,6 +91,37 @@ footer a{color:var(--a);text-decoration:none}
 <div class="fld"><label for="amp_bright">Яркость от громкости (0 — всегда полная)</label><output id="amp_bright_o" for="amp_bright">50</output></div>
 <input type="range" id="amp_bright" min="0" max="100" step="1">
 </div>
+<div id="specBlock" hidden>
+<label for="spec_layout">Расположение частот</label>
+<select id="spec_layout">
+<option value="center">Бас в центре, верх по краям</option>
+<option value="edges">Бас по краям, верх в центре</option>
+<option value="start">От начала ленты: бас → верх</option>
+<option value="end">От начала ленты: верх → бас</option>
+</select>
+<p class="hint">Ширина зон — доли ленты; считаются относительно друг друга.</p>
+<div class="fld"><label for="spec_w_bass">Ширина: бас</label><output id="spec_w_bass_o" for="spec_w_bass">40</output></div>
+<input type="range" id="spec_w_bass" min="0" max="100" step="1">
+<div class="fld"><label for="spec_w_mid">Ширина: середина</label><output id="spec_w_mid_o" for="spec_w_mid">20</output></div>
+<input type="range" id="spec_w_mid" min="0" max="100" step="1">
+<div class="fld"><label for="spec_w_high">Ширина: верх</label><output id="spec_w_high_o" for="spec_w_high">40</output></div>
+<input type="range" id="spec_w_high" min="0" max="100" step="1">
+<label for="spec_style">Окраска спектра</label>
+<select id="spec_style">
+<option value="rainbow">Радуга (цвета крутятся)</option>
+<option value="colors">Свои цвета зон</option>
+<option value="gradient">Градиент из своих цветов</option>
+</select>
+<div id="specColors" class="cols">
+<div><label for="spec_c1">Бас</label><input type="color" id="spec_c1" value="#ff0000"></div>
+<div><label for="spec_c2">Середина</label><input type="color" id="spec_c2" value="#00ff00"></div>
+<div><label for="spec_c3">Верх</label><input type="color" id="spec_c3" value="#0000ff"></div>
+</div>
+<div id="specBlendBlock">
+<div class="fld"><label for="spec_blend">Плавность градиента (100 — плавный)</label><output id="spec_blend_o" for="spec_blend">100</output></div>
+<input type="range" id="spec_blend" min="0" max="100" step="1">
+</div>
+</div>
 <div id="fxBlock" hidden>
 <label for="fx_id">Эффект WLED</label>
 <select id="fx_id"><option value="-1">-1: оставить текущий</option></select>
@@ -146,13 +180,13 @@ footer a{color:var(--a);text-decoration:none}
 'use strict';
 const $=id=>document.getElementById(id), on=(e,t,f)=>e.addEventListener(t,f), enc=encodeURIComponent;
 const SENS=['sens_bass','sens_mid','sens_high'];
-const D={output:'wled',mode:'rainbow',brightness:.8,speed:1,delay_ms:0,smooth:1,gate:.08,sens_bass:.75,sens_mid:.75,sens_high:.75,alice_mute:1,
-fx_id:-1,fx_pal:-1,fx_color:1,fx_ix:1,fx_floor:.2,amp_bright:.5,flash_sens:.65,wled_leds:188,wled_ip:'',mono_color:'auto'};
-const NUM={flash_sens:1,amp_bright:1,sens_bass:1,sens_mid:1,sens_high:1,brightness:1,speed:1,delay_ms:1,smooth:1,gate:1,alice_mute:1,fx_id:1,fx_pal:1,fx_color:1,fx_ix:1,fx_floor:1,wled_leds:1};
-const RNG=['brightness','speed','delay_ms','smooth','gate',...SENS,'fx_floor','amp_bright','flash_sens'], CHK=['alice_mute','fx_color','fx_ix'];
+const D={output:'wled',mode:'rainbow',brightness:.31,speed:1,delay_ms:0,smooth:2.4,gate:.093,sens_bass:.5,sens_mid:.5,sens_high:.7,alice_mute:1,
+fx_id:9,fx_pal:0,fx_color:1,fx_ix:1,fx_floor:.2,amp_bright:.6,flash_sens:0,wled_leds:188,wled_ip:'',mono_color:'ff0000',spec_style:'rainbow',spec_c1:'ff0000',spec_c2:'00ff00',spec_c3:'0000ff',spec_layout:'center',spec_blend:1,spec_w_bass:.4,spec_w_mid:.2,spec_w_high:.4};
+const NUM={spec_w_bass:1,spec_w_mid:1,spec_w_high:1,spec_blend:1,flash_sens:1,amp_bright:1,sens_bass:1,sens_mid:1,sens_high:1,brightness:1,speed:1,delay_ms:1,smooth:1,gate:1,alice_mute:1,fx_id:1,fx_pal:1,fx_color:1,fx_ix:1,fx_floor:1,wled_leds:1};
+const RNG=['brightness','speed','delay_ms','smooth','gate',...SENS,'fx_floor','amp_bright','flash_sens','spec_blend','spec_w_bass','spec_w_mid','spec_w_high'], CHK=['alice_mute','fx_color','fx_ix'];
 const st={...D};
 let pend={},tm=0,mt=0,cache=null,chBusy=false,fxBusy=false;
-const SC={brightness:1,speed:3,smooth:3,gate:.3,sens_bass:1,sens_mid:1,sens_high:1,fx_floor:1,amp_bright:1,flash_sens:1};   // 100 на ползунке = это значение в settings
+const SC={brightness:1,speed:3,smooth:3,gate:.3,sens_bass:1,sens_mid:1,sens_high:1,fx_floor:1,amp_bright:1,flash_sens:1,spec_blend:1,spec_w_bass:1,spec_w_mid:1,spec_w_high:1};   // 100 на ползунке = это значение в settings
 const toUi=(k,v)=>k in SC?Math.round(+v/SC[k]*100):+v, fromUi=(k,u)=>k in SC?Math.round(+u/100*SC[k]*1000)/1000:+u;
 const fmt=(k,v)=>k==="delay_ms"?v+" мс":String(toUi(k,v));
 const msg=(t,err)=>{const m=$('msg');m.textContent=t;m.className=err?'err':'';clearTimeout(mt);
@@ -187,8 +221,12 @@ function fxToggle(){
  $('fxBlock').hidden=!onFx;
  $('monoBlock').hidden=st.mode!=='mono';
  $('ampBlock').hidden=!(st.mode==='rainbow'||st.mode==='mono');
+ $('specBlock').hidden=st.mode!=='spectrum';
+ $('specColors').hidden=st.spec_style==='rainbow';
+ $('specBlendBlock').hidden=st.spec_style!=='gradient';
  if(onFx)loadFx();
 }
+const SPEC=['spec_c1','spec_c2','spec_c3'];
 const hexOk=s=>/^[0-9a-f]{6}$/i.test(String(s));
 function renderMono(){
  const auto=!hexOk(st.mono_color);
@@ -202,8 +240,13 @@ function render(){
  CHK.forEach(k=>{$(k).checked=!!+st[k];});
  ['fx_id','fx_pal'].forEach(k=>{$(k).value=st[k];});
  renderMono();
+ $('spec_style').value=st.spec_style;$('spec_layout').value=st.spec_layout;
+ SPEC.forEach(k=>{if(hexOk(st[k]))$(k).value='#'+st[k].toLowerCase();});
  fxToggle();
 }
+on($('spec_style'),'change',()=>{st.spec_style=$('spec_style').value;put('spec_style',st.spec_style,1);fxToggle();});
+on($('spec_layout'),'change',()=>{st.spec_layout=$('spec_layout').value;put('spec_layout',st.spec_layout,1);});
+SPEC.forEach(k=>on($(k),'input',()=>{st[k]=$(k).value.slice(1);put(k,st[k],0);}));
 on($('mono_auto'),'change',()=>{
  st.mono_color=$('mono_auto').checked?'auto':$('mono_pick').value.slice(1);
  put('mono_color',st.mono_color,1);

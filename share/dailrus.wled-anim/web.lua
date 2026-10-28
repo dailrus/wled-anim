@@ -64,6 +64,11 @@ local SCHEMA = {
   fx_floor = { "num", 0, 1 }, fx_fps = { "int", 5, 50 },
   mono_color = { "color" },             -- auto (по музыке) или rrggbb
   amp_bright = { "num", 0, 1 },         -- rainbow/mono: яркость от громкости
+  spec_style = { "enum", { rainbow = 1, colors = 1, gradient = 1 } },   -- окраска спектра
+  spec_c1 = { "hex" }, spec_c2 = { "hex" }, spec_c3 = { "hex" },        -- центр/середина/края
+  spec_layout = { "enum", { center = 1, edges = 1, start = 1, ["end"] = 1 } },   -- где бас, где верх
+  spec_blend = { "num", 0, 1 },         -- плавность градиента
+  spec_w_bass = { "num", 0, 1 }, spec_w_mid = { "num", 0, 1 }, spec_w_high = { "num", 0, 1 },   -- ширина зон
   flash_sens = { "num", 0, 1 },         -- чувствительность белой вспышки (0 — выкл)
   sensitivity = { "num", 0, 1 },        -- общая (до 1.3.0); теперь по полосам:
   sens_bass = { "num", 0, 1 }, sens_mid = { "num", 0, 1 }, sens_high = { "num", 0, 1 },
@@ -84,9 +89,9 @@ local function check(k, v)
     if s[2][v] then return v end
   elseif s[1] == "ip" then
     if valid_ip(v) then return v end
-  elseif s[1] == "color" then
+  elseif s[1] == "color" or s[1] == "hex" then           -- hex — только rrggbb, без auto
     v = v:lower()
-    if v == "auto" or v:match("^%x%x%x%x%x%x$") then return v end
+    if (v == "auto" and s[1] == "color") or v:match("^%x%x%x%x%x%x$") then return v end
   else
     local n = tonumber(v)
     if n and n == n and n >= s[2] and n <= s[3] then

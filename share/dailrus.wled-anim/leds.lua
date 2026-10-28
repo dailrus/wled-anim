@@ -36,13 +36,22 @@ local DEBUG = os.getenv("WLED_ANIM_DEBUG")
 local function log(s) io.stderr:write(os.date("%F %T "), s, "\n"); io.stderr:flush() end
 
 -- настройки (файл settings: key=value), перечитываются раз в секунду
-local cfg = { brightness = 0.8, speed = 1.0, mode = "rainbow",
+local cfg = { brightness = 0.31, speed = 1.0, mode = "rainbow",
               output = "wled", wled_ip = "", wled_leds = 188,
-              fps = 50, gamma = 2.2, smooth = 1.0, gate = 0.08, alice_mute = 1,
-              fx_id = -1, fx_pal = -1, fx_color = 1, fx_floor = 0.2, fx_ix = 1, fx_fps = 30,
-              mono_color = "auto", amp_bright = 0.5, flash_sens = 0.65 }   -- sens_bass/sens_mid/sens_high: см. sens_cut
-local STR_KEYS = { wled_ip = true, mono_color = true }   -- не превращать в числа ("123456" — цвет)
+              fps = 50, gamma = 2.2, smooth = 2.4, gate = 0.093, alice_mute = 1,
+              fx_id = 9, fx_pal = 0, fx_color = 1, fx_floor = 0.2, fx_ix = 1, fx_fps = 30,
+              mono_color = "ff0000", amp_bright = 0.6, flash_sens = 0 }   -- sens_bass/sens_mid/sens_high: см. sens_cut
+local STR_KEYS = { wled_ip = true, mono_color = true,     -- не превращать в числа ("123456" — цвет)
+                   spec_c1 = true, spec_c2 = true, spec_c3 = true }
 local mono_rgb = nil            -- {r, g, b} 0..1 для mode=mono; nil — цвет меняется по музыке
+-- spectrum: цвета центра (бас), середины и краёв (верх) для spec_style=colors|gradient
+local SPEC_DEF = { "ff0000", "00ff00", "0000ff" }
+local spec_rgb = { { 1, 0, 0 }, { 0, 1, 0 }, { 0, 0, 1 } }
+
+local function hex_rgb(s)
+  local r, g, b = tostring(s):lower():match("^(%x%x)(%x%x)(%x%x)$")
+  return r and { tonumber(r, 16) / 255, tonumber(g, 16) / 255, tonumber(b, 16) / 255 } or nil
+end
 
 -- WLED: UDP-сокет и адрес, пересобирается при смене wled_ip
 local WLED_PORT, WLED_TIMEOUT = 21324, 2   -- через 2 с без пакетов WLED вернёт свой эффект
@@ -69,8 +78,8 @@ local function load_cfg()
     if k then cfg[k] = STR_KEYS[k] and v or (tonumber(v) or v) end
   end
   f:close()
-  local cr, cg, cb = tostring(cfg.mono_color):lower():match("^(%x%x)(%x%x)(%x%x)$")
-  mono_rgb = cr and { tonumber(cr, 16) / 255, tonumber(cg, 16) / 255, tonumber(cb, 16) / 255 } or nil
+  mono_rgb = hex_rgb(cfg.mono_color)
+  for i = 1, 3 do spec_rgb[i] = hex_rgb(cfg["spec_c" .. i]) or hex_rgb(SPEC_DEF[i]) end
   -- IP ленты задаётся в интерфейсе; пока его нет (или он не IPv4) — ничего не шлём
   if not cfg.wled_ip:match("^%d+%.%d+%.%d+%.%d+$") then cfg.wled_ip = "" end
   if cfg.wled_ip ~= wled_ip_cur and cfg.wled_ip ~= "" then
@@ -170,9 +179,9 @@ local ref, pres = 0.05, 0
 local function norm(x, fl, pk) return 0.85 * clamp((x - fl) / max(pk - fl, pk * 0.35), 0, 1) + 0.15 * x / pk end
 
 -- отсечка по чувствительности полосы: 1 → без отсечки, 0 → порог 0.6.
--- Нет своего значения — общий sensitivity из прежних версий, иначе 0.75.
-local function sens_cut(x, sens)
-  local th = (1 - clamp(tonumber(sens) or tonumber(cfg.sensitivity) or 0.75, 0, 1)) * 0.6
+-- Нет своего значения — общий sensitivity из прежних версий, иначе def полосы.
+local function sens_cut(x, sens, def)
+  local th = (1 - clamp(tonumber(sens) or tonumber(cfg.sensitivity) or def, 0, 1)) * 0.6
   if th <= 0 then return x end
   return max(0, (x - th) / (1 - th))
 end
@@ -181,7 +190,7 @@ local function feed(b, m, tr, dt, t)
   last_data_t = t
   local sum = b + m + tr
   ref = max(ref * exp(-dt / 20), sum, 0.02)
-  local gate = clamp(tonumber(cfg.gate) or 0.08, 0, 0.5)
+  local gate = clamp(tonumber(cfg.gate) or 0.093, 0, 0.5)
   local q = sum / ref
   if sum <= 0.003 or q < gate then gate_open = false
   elseif q > 2 * gate then gate_open = true end
@@ -211,7 +220,7 @@ local function feed(b, m, tr, dt, t)
   local nb, nm, nt = norm(b, flo_b, peak_b), norm(m, flo_m, peak_m), norm(tr, flo_t, peak_t)
   -- чувствительность (отдельно бас/середина/верх): всплески ниже порога не зажигают
   -- ленту (и не дают бит), то, что выше, растягивается на весь диапазон
-  nb, nm, nt = sens_cut(nb, cfg.sens_bass), sens_cut(nm, cfg.sens_mid), sens_cut(nt, cfg.sens_high)
+  nb, nm, nt = sens_cut(nb, cfg.sens_bass, 0.5), sens_cut(nm, cfg.sens_mid, 0.5), sens_cut(nt, cfg.sens_high, 0.7)
   env_b = env(env_b, nb, dt, 0.16)
   env_m = env(env_m, nm, dt, 0.20)
   env_t = env(env_t, nt, dt, 0.10)
@@ -225,7 +234,7 @@ local function feed(b, m, tr, dt, t)
   beat_cond = cond
   -- белая вспышка — свой порог по flash_sens (0 — без вспышек, 0.65 — как скачок цвета,
   -- 1 — на любой заметный удар): уровень выше 0.95..0.4 и в 2.2..1.1 раза выше среднего
-  local fs = clamp(tonumber(cfg.flash_sens) or 0.65, 0, 1)
+  local fs = clamp(tonumber(cfg.flash_sens) or 0, 0, 1)
   local fcond = fs > 0 and nb > 0.95 - 0.55 * fs and nb > avg_b * (2.2 - 1.08 * fs)
   if fcond and not flash_cond and t - last_flash > 0.15 then
     last_flash = t
@@ -299,8 +308,23 @@ local function draw_wled(dt, fade)
   local peak_w = 1.5 / n                                  -- полуширина пиковой точки
   local pulse_v = clamp(0.08 + 0.92 * env_b, 0, 1)        -- яркость pulse по басу
   -- rainbow/mono: яркость столба от громкости баса (amp_bright 0 — всегда полная)
-  local ab = clamp(tonumber(cfg.amp_bright) or 0.5, 0, 1)
+  local ab = clamp(tonumber(cfg.amp_bright) or 0.6, 0, 1)
   local amp = 1 - ab + ab * clamp(env_b, 0, 1)
+  -- spectrum: 0 — радуга, 1 — цвета зон, 2 — градиент
+  local spec_style = cfg.spec_style == "colors" and 1 or (cfg.spec_style == "gradient" and 2 or 0)
+  -- расположение: 0 — бас в центре, 1 — бас по краям, 2 — бас в начале, 3 — бас в конце ленты
+  local sl = cfg.spec_layout
+  local spec_layout = sl == "edges" and 1 or (sl == "start" and 2 or (sl == "end" and 3 or 0))
+  local spec_blend = clamp(tonumber(cfg.spec_blend) or 1, 0.02, 1)   -- плавность градиента
+  -- ширина зон (доли ленты): b1 — конец баса, b2 — начало верха, sm — середина зоны середины
+  local zb = clamp(tonumber(cfg.spec_w_bass) or 0.4, 0, 1)
+  local zm = clamp(tonumber(cfg.spec_w_mid) or 0.2, 0, 1)
+  local zt = clamp(tonumber(cfg.spec_w_high) or 0.4, 0, 1)
+  local zs = zb + zm + zt
+  if zs < 0.01 then zb, zm, zt, zs = 0.4, 0.2, 0.4, 1 end
+  local b1, b2 = zb / zs, (zb + zm) / zs
+  local sm = (b1 + b2) / 2
+  local tw = 0.15                                         -- ширина мягкой границы
   for j = 0, n - 1 do
     local d = abs(j / half - 0.5) * 2                     -- 0 в центре, 1 на краях
     local r, g, bl, mask
@@ -314,12 +338,33 @@ local function draw_wled(dt, fade)
       local v = pulse_v * (0.8 + 0.2 * math.cos((d * 2 - spin) * 2 * math.pi))
       r, g, bl = hsv(hue, sat, v)
       mask = 1
-    elseif mv == 3 then                                   -- spectrum: три зоны от центра
-      local wb = clamp((0.4 - d) / 0.15, 0, 1)            -- вес баса в центре
-      local wt = clamp((d - 0.6) / 0.15, 0, 1)            -- вес верха на краях
+    elseif mv == 3 then                                   -- spectrum: три зоны бас → середина → верх
+      -- p: 0 — сторона баса, 1 — сторона верха (по spec_layout)
+      local p = spec_layout == 0 and d or (spec_layout == 1 and 1 - d or (spec_layout == 2 and j / half or 1 - j / half))
+      local wb = clamp((b1 - p) / tw, 0, 1)               -- вес баса
+      local wt = clamp((p - b2) / tw, 0, 1)               -- вес верха
       local wm = max(0, 1 - wb - wt)                      -- вес середины
       local e = wb * env_b + wm * env_m + wt * env_t
-      r, g, bl = hsv(hue + wm * 120 + wt * 240, sat, e)
+      if spec_style == 0 then                             -- радуга: оттенок зон крутится
+        r, g, bl = hsv(hue + wm * 120 + wt * 240, sat, e)
+      else
+        local c1, c2, c3 = spec_rgb[1], spec_rgb[2], spec_rgb[3]
+        local k1, k2, k3                                  -- доли цветов центра/середины/краёв
+        if spec_style == 1 then                           -- цвета зон, мягкие границы
+          k1, k2, k3 = wb, wm, wt
+        else                                              -- градиент по всей длине
+          -- опорные точки: цвет баса в p=0, середины — в центре её зоны (sm), верха — в p=1
+          local seg = p < sm and 0 or 1
+          local f = seg == 0 and p / max(sm, 0.001) or (p - sm) / max(1 - sm, 0.001)
+          -- плавность: 1 — линейный переход, меньше — переход сжимается к середине участка
+          local tt = clamp((f - 0.5) / spec_blend + 0.5, 0, 1)
+          if seg == 0 then k1, k2, k3 = 1 - tt, tt, 0 else k1, k2, k3 = 0, 1 - tt, tt end
+        end
+        local wf = 1 - sat                                -- на вспышке цвет слегка белеет
+        r = ((c1[1] * k1 + c2[1] * k2 + c3[1] * k3) * sat + wf) * e
+        g = ((c1[2] * k1 + c2[2] * k2 + c3[2] * k3) * sat + wf) * e
+        bl = ((c1[3] * k1 + c2[3] * k2 + c3[3] * k3) * sat + wf) * e
+      end
       mask = e
     else                                                  -- rainbow / mono (по умолчанию)
       local x = clamp((reach - d) / edge + 0.5, 0, 1)
